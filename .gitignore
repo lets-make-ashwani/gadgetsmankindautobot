@@ -1,0 +1,27 @@
+# Environment variables & secrets (NEVER COMMIT)
+.env
+*.env
+.env.*
+!.env.example
+
+# Telegram session files (DO NOT COMMIT)
+*.session
+*.session-journal
+telethon_session
+telethon_session.*
+
+# Local credentials fallback
+config.json
+
+# Temporary video processing directories
+downloads/
+processed/
+logs/
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
