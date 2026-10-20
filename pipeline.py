@@ -109,6 +109,10 @@ def execute_pipeline_cycle():
         viral_caption = dub_result["caption"]
         summary = dub_result["summary"]
 
+        # Embed message ID tag into caption for persistent Instagram duplicate prevention
+        if f"#tg{message_id}" not in viral_caption:
+            viral_caption = f"{viral_caption}\n\n#tg{message_id}"
+
         print("\n" + "-"*60)
         print("AI CONTENT GENERATED:")
         print(f"Summary: {summary}")
@@ -133,8 +137,8 @@ def execute_pipeline_cycle():
             else:
                 print(f"[-] Facebook upload failed: {fb_id_or_err}")
 
-        # 5. Mark as processed & Log
-        telegram_extractor.mark_video_processed(message_id)
+        # 5. Mark as processed & Log (persisting to Telegram Cloud)
+        telegram_extractor.mark_video_processed(message_id, config)
 
         log_entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

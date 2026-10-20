@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import asyncio
+import re
+import requests
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -13,22 +15,115 @@ TRACKER_FILE = os.path.join(os.path.dirname(__file__), "tracker.json")
 
 def load_tracker():
     if not os.path.exists(TRACKER_FILE):
-        return {"channel": "allterapost", "last_processed_id": 0, "processed_ids": []}
+        return {"channel": "allterapost", "last_processed_id": 28824, "processed_ids": [28823, 28824]}
     try:
-        with open(TRACKER_FILE, "r") as f:
-            return json.load(f)
+        with open(TRACKER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if data.get("last_processed_id", 0) < 28824:
+                data["last_processed_id"] = 28824
+                if 28824 not in data.setdefault("processed_ids", []):
+                    data["processed_ids"].append(28824)
+            return data
     except:
-        return {"channel": "allterapost", "last_processed_id": 0, "processed_ids": []}
+        return {"channel": "allterapost", "last_processed_id": 28824, "processed_ids": [28823, 28824]}
 
 def save_tracker(data):
-    with open(TRACKER_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open(TRACKER_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"[!] Warning saving local tracker: {e}")
+
+async def sync_tracker_from_cloud(client):
+    """Fetches persistent tracker JSON from Telegram Saved Messages ('me')."""
+    try:
+        async for msg in client.iter_messages('me', search="GM_TRACKER:", limit=5):
+            if msg.text and msg.text.startswith("GM_TRACKER:"):
+                raw_json = msg.text[len("GM_TRACKER:"):].strip()
+                data = json.loads(raw_json)
+                print(f"[☁️] Synced Tracker from Telegram Cloud: Last ID #{data.get('last_processed_id')}")
+                return data
+    except Exception as e:
+        print(f"[!] Cloud tracker sync notice: {e}")
+    return None
+
+async def save_tracker_to_cloud(client_or_config, tracker_data):
+    """Persists tracker JSON to Telegram Saved Messages ('me') to survive Render container rebuilds."""
+    close_client = False
+    if isinstance(client_or_config, TelegramClient):
+        client = client_or_config
+    else:
+        tg_cfg = client_or_config.get("telegram", {})
+        api_id = tg_cfg.get("api_id")
+        api_hash = tg_cfg.get("api_hash")
+        string_sess = tg_cfg.get("string_session")
+        if string_sess:
+            client = TelegramClient(StringSession(string_sess), api_id, api_hash)
+        else:
+            session_file = os.path.join(os.path.dirname(__file__), "telethon_session")
+            client = TelegramClient(session_file, api_id, api_hash)
+        await client.connect()
+        close_client = True
+
+    try:
+        payload = f"GM_TRACKER:{json.dumps(tracker_data)}"
+        target_msg = None
+        async for msg in client.iter_messages('me', search="GM_TRACKER:", limit=5):
+            if msg.text and msg.text.startswith("GM_TRACKER:"):
+                target_msg = msg
+                break
+
+        if target_msg:
+            await target_msg.edit(payload)
+            print(f"[☁️] Persistent Cloud Tracker updated in Saved Messages (ID #{tracker_data.get('last_processed_id')})")
+        else:
+            await client.send_message('me', payload)
+            print(f"[☁️] Persistent Cloud Tracker created in Saved Messages (ID #{tracker_data.get('last_processed_id')})")
+    except Exception as e:
+        print(f"[!] Warning writing cloud tracker: {e}")
+    finally:
+        if close_client:
+            await client.disconnect()
+
+def get_instagram_posted_ids(config):
+    """Cross-checks live Instagram profile to ensure no already-posted reels are duplicated."""
+    meta_cfg = config.get("meta", {})
+    ig_user_id = meta_cfg.get("instagram_id")
+    page_token = meta_cfg.get("page_token")
+    if not ig_user_id or not page_token:
+        return set()
+
+    url = f"https://graph.facebook.com/v22.0/{ig_user_id}/media"
+    params = {"fields": "id,caption", "access_token": page_token, "limit": 30}
+    posted = set()
+    try:
+        r = requests.get(url, params=params, timeout=12)
+        if r.status_code == 200:
+            for item in r.json().get("data", []):
+                cap = item.get("caption", "")
+                for m_id in re.findall(r"#tg(\d+)", cap):
+                    posted.add(int(m_id))
+    except Exception as e:
+        print(f"[!] IG cross-check notice: {e}")
+    return posted
+
+def _run_coroutine(coro):
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, coro).result()
+        else:
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        return asyncio.run(coro)
 
 async def get_next_video(config, download_dir):
     """
-    Connects to Telegram, finds the oldest unposted video, downloads it,
+    Connects to Telegram, synchronizes cloud tracker state,
+    finds the oldest unposted video, downloads it,
     and returns (file_path, message_id, raw_caption).
-    Supports both StringSession (for Render/Cloud) and local file session.
     """
     tg_cfg = config.get("telegram", {})
     api_id = tg_cfg.get("api_id")
@@ -55,10 +150,23 @@ async def get_next_video(config, download_dir):
     print(f"[*] Accessing channel: {channel_name}...")
     channel = await client.get_entity(channel_name)
 
+    # 1. Sync state with Telegram Cloud ('me' Saved Messages)
     tracker = load_tracker()
-    last_id = tracker.get("last_processed_id", 0)
-    processed_set = set(tracker.get("processed_ids", []))
-    print(f"[*] Last processed message ID: {last_id}. Searching for oldest next video...")
+    cloud_tracker = await sync_tracker_from_cloud(client)
+    if cloud_tracker:
+        cloud_last_id = cloud_tracker.get("last_processed_id", 0)
+        local_last_id = tracker.get("last_processed_id", 0)
+        tracker["last_processed_id"] = max(cloud_last_id, local_last_id)
+        merged_set = set(tracker.get("processed_ids", [])) | set(cloud_tracker.get("processed_ids", []))
+        tracker["processed_ids"] = sorted(list(merged_set))
+        save_tracker(tracker)
+
+    # 2. Cross-check live Instagram posts
+    ig_posted_ids = get_instagram_posted_ids(config)
+
+    last_id = tracker.get("last_processed_id", 28824)
+    processed_set = set(tracker.get("processed_ids", [])) | ig_posted_ids | {28823, 28824}
+    print(f"[*] Last processed message ID: {last_id}. Searching for oldest next video (Skipping {len(processed_set)} known IDs)...")
 
     os.makedirs(download_dir, exist_ok=True)
     target_msg = None
@@ -108,9 +216,17 @@ async def get_next_video(config, download_dir):
         "date": str(target_msg.date)
     }
 
-def mark_video_processed(message_id):
+def mark_video_processed(message_id, config=None):
+    """Marks video as processed locally and persists state to Telegram Cloud."""
     tracker = load_tracker()
-    tracker["last_processed_id"] = message_id
-    if message_id not in tracker.get("processed_ids", []):
-        tracker.setdefault("processed_ids", []).append(message_id)
+    tracker["last_processed_id"] = max(tracker.get("last_processed_id", 0), message_id)
+    p_set = set(tracker.get("processed_ids", []))
+    p_set.add(message_id)
+    tracker["processed_ids"] = sorted(list(p_set))
     save_tracker(tracker)
+
+    if config:
+        try:
+            _run_coroutine(save_tracker_to_cloud(config, tracker))
+        except Exception as e:
+            print(f"[!] Cloud sync notice: {e}")
