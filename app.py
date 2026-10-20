@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 import pipeline
@@ -16,12 +17,22 @@ if hasattr(sys.stdout, "reconfigure"):
 
 app = FastAPI(title="Gadgets Mankind Automation Cloud Service")
 
+# Allow CORS so socialpannel can query from anywhere
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Global State
 automation_state = {
     "status": "RUNNING",
+    "is_paused": False,
     "interval_hours": 3,
     "last_run": None,
-    "next_run": None,
+    "next_run": (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S"),
     "is_processing": False,
     "last_result": None
 }
@@ -58,12 +69,16 @@ def run_cycle_task():
 async def background_scheduler():
     """Background loop that runs on Render 24/7 every 3 hours"""
     print("[*] 24/7 Cloud Background Scheduler Started!")
-    # Initial run after 15 seconds of startup
-    await asyncio.sleep(15)
+    # Initial pause of 30 seconds on startup
+    await asyncio.sleep(30)
     while True:
-        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Triggering scheduled 3-hour cycle...")
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, run_cycle_task)
+        if automation_state["is_paused"]:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bot is PAUSED. Skipping scheduled 3-hour cycle.")
+        else:
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Triggering scheduled 3-hour cycle...")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, run_cycle_task)
+            
         sleep_seconds = automation_state["interval_hours"] * 3600
         print(f"[*] Sleeping for {automation_state['interval_hours']} hours...")
         await asyncio.sleep(sleep_seconds)
@@ -74,7 +89,35 @@ async def on_startup():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "time": datetime.now().isoformat(), "state": automation_state}
+    tracker = pipeline.telegram_extractor.load_tracker()
+    history = load_recent_history()
+    return {
+        "status": "PAUSED" if automation_state["is_paused"] else "RUNNING",
+        "is_paused": automation_state["is_paused"],
+        "is_processing": automation_state["is_processing"],
+        "interval_hours": automation_state["interval_hours"],
+        "last_run": automation_state["last_run"],
+        "next_run": automation_state["next_run"],
+        "last_message_id": tracker.get("last_processed_id", 0),
+        "total_posts": len(history),
+        "recent_posts": history[:5]
+    }
+
+@app.get("/api/status")
+def api_status():
+    return health()
+
+@app.post("/pause")
+def pause_bot():
+    automation_state["is_paused"] = True
+    automation_state["status"] = "PAUSED"
+    return {"status": "success", "message": "Bot PAUSED. Scheduled runs stopped.", "is_paused": True}
+
+@app.post("/resume")
+def resume_bot():
+    automation_state["is_paused"] = False
+    automation_state["status"] = "RUNNING"
+    return {"status": "success", "message": "Bot RESUMED. Scheduled runs active.", "is_paused": False}
 
 @app.post("/trigger-now")
 def trigger_now(background_tasks: BackgroundTasks):
@@ -88,6 +131,7 @@ def dashboard():
     tracker = pipeline.telegram_extractor.load_tracker()
     last_id = tracker.get("last_processed_id", 0)
     history = load_recent_history()
+    is_paused = automation_state["is_paused"]
 
     history_html = ""
     if not history:
@@ -112,6 +156,24 @@ def dashboard():
                 </div>
             </div>
             """
+
+    status_badge = """
+    <div class="flex items-center space-x-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-xs text-emerald-400 font-semibold">Running 24/7 (Active)</span>
+    </div>
+    """ if not is_paused else """
+    <div class="flex items-center space-x-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+        <span class="text-xs text-amber-400 font-semibold">PAUSED (Stopped)</span>
+    </div>
+    """
+
+    toggle_btn = f"""
+    <button onclick="toggleBot({'false' if is_paused else 'true'})" class="px-4 py-2 {'bg-emerald-500 hover:bg-emerald-400 text-black' if is_paused else 'bg-red-500 hover:bg-red-400 text-white'} font-semibold text-xs rounded-lg transition-all shadow-sm">
+        {'▶️ Start / Resume Bot' if is_paused else '⏸️ Stop / Pause Bot'}
+    </button>
+    """
 
     return f"""
     <!DOCTYPE html>
@@ -138,10 +200,7 @@ def dashboard():
                     </div>
                     <p class="text-xs text-zinc-500">Telegram @allterapost ➔ Groq Dubbing ➔ Instagram Reels & Facebook</p>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span class="text-xs text-zinc-300 font-medium">Running 24/7</span>
-                </div>
+                {status_badge}
             </div>
 
             <!-- Stats Grid -->
@@ -149,7 +208,7 @@ def dashboard():
                 <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
                     <div class="text-[11px] text-zinc-500 uppercase font-semibold">Post Cadence</div>
                     <div class="text-xl font-bold text-white mt-1">Every 3 Hours</div>
-                    <div class="text-xs text-emerald-400 mt-0.5">8 Reels / 24 hrs</div>
+                    <div class="text-xs {'text-emerald-400' if not is_paused else 'text-amber-400'} mt-0.5">{'8 Reels / 24 hrs' if not is_paused else 'Paused'}</div>
                 </div>
 
                 <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-xl">
@@ -171,18 +230,21 @@ def dashboard():
                 </div>
             </div>
 
-            <!-- Action & Live Status Banner -->
-            <div class="p-5 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between">
+            <!-- Action & Live Controls Banner -->
+            <div class="p-5 bg-zinc-950 border border-zinc-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <div class="text-sm font-semibold text-white">Next Scheduled Post</div>
                     <div class="text-xs text-zinc-400 mt-0.5">
-                        Status: <span class="text-emerald-400 font-medium">{"Processing now..." if automation_state["is_processing"] else "Waiting for schedule"}</span>
-                        {" &bull; Next run: " + automation_state["next_run"] if automation_state["next_run"] else ""}
+                        Status: <span class="{'text-emerald-400' if not is_paused else 'text-amber-400'} font-medium">{'PAUSED' if is_paused else ('Processing now...' if automation_state['is_processing'] else 'Waiting for schedule')}</span>
+                        {" &bull; Next run: " + automation_state["next_run"] if (not is_paused and automation_state["next_run"]) else ""}
                     </div>
                 </div>
-                <button onclick="triggerNow()" class="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-semibold text-xs rounded-lg transition-all shadow-sm">
-                    ⚡ Publish Next Video Now
-                </button>
+                <div class="flex items-center space-x-3">
+                    {toggle_btn}
+                    <button onclick="triggerNow()" class="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-semibold text-xs rounded-lg transition-all shadow-sm">
+                        ⚡ Publish Next Video Now
+                    </button>
+                </div>
             </div>
 
             <!-- Recent Published Feed -->
@@ -205,6 +267,21 @@ def dashboard():
                         .catch(e => alert("Error: " + e));
                 }}
             }}
+
+            function toggleBot(pause) {{
+                const endpoint = pause ? '/pause' : '/resume';
+                const actionName = pause ? 'STOP / PAUSE' : 'START / RESUME';
+                if (confirm("Are you sure you want to " + actionName + " the automated 3-hour scheduler?")) {{
+                    fetch(endpoint, {{ method: 'POST' }})
+                        .then(r => r.json())
+                        .then(data => {{
+                            alert(data.message);
+                            location.reload();
+                        }})
+                        .catch(e => alert("Error: " + e));
+                }}
+            }}
+
             // Auto refresh status every 60s
             setTimeout(() => location.reload(), 60000);
         </script>
