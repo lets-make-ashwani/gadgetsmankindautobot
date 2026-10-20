@@ -63,18 +63,25 @@ def process_video_ai(video_path, output_dir, config):
     print(f"    - English Translation: {english_raw}")
 
     print("[*] Step 3: Polishing Dub Script & Crafting Viral Caption via Groq...")
-    prompt = f"""You are an expert social media and tech gadget video producer.
+    prompt = f"""You are an elite viral social media gadget producer & affiliate copywriter for @gadgetsmankind.
 Video Duration: {duration:.1f} seconds.
 Original text ({detected_lang}): "{orig_text}"
 English translation: "{english_raw}"
 
 Please generate strict JSON:
-1. "dub_script": A fluent, natural, enthusiastic spoken English voiceover for this gadget video. Keep it conversational and timed for ~{int(duration)+1} seconds.
-2. "viral_caption": A high-converting Instagram Reel / Facebook caption with a curiosity hook, problem-solution description, clear CTA, and 12-15 trending hashtags (#gadgets #technology #homefinds #gadgetsmankind etc.).
-3. "summary": 1-sentence product summary.
+1. "product_name": Specific, clean commercial title of this gadget suitable for Amazon search (3-5 words, e.g. "Waterproof Leak Sealant Paste").
+2. "dub_script": A fluent, natural, enthusiastic spoken English voiceover. Keep it conversational, punchy, timed for ~{int(duration)+1} seconds.
+3. "viral_caption": A high-converting Instagram Reel caption formatted with:
+   - Curiosity hook line with emoji
+   - 2-3 bullet points of what problem it solves
+   - Clear Auto-DM Call To Action: "💬 Comment \"LINK\" or drop any emoji below and I'll send the direct Amazon purchase link straight to your DM! 📩⚡"
+   - Link in bio mention: "🔗 Direct link also available in bio @gadgetsmankind"
+   - 10-14 trending hashtags (#gadgets #amazonfinds #homefinds #gadgetsmankind #smartgadgets etc.)
+4. "summary": 1-sentence product summary.
 
 Respond ONLY with valid JSON:
 {{
+  "product_name": "...",
   "dub_script": "...",
   "viral_caption": "...",
   "summary": "..."
@@ -88,10 +95,12 @@ Respond ONLY with valid JSON:
     )
 
     ai_data = json.loads(completion.choices[0].message.content)
+    product_name = ai_data.get("product_name", "Viral Home Gadget")
     dub_script = ai_data.get("dub_script", english_raw)
     viral_caption = ai_data.get("viral_caption", "")
     summary = ai_data.get("summary", "")
 
+    print(f"    - Product Name: {product_name}")
     print(f"    - Summary: {summary}")
     print(f"    - Polished Script: {dub_script}")
 
@@ -128,6 +137,7 @@ Respond ONLY with valid JSON:
     return {
         "final_video": final_video,
         "caption": viral_caption,
+        "product_name": product_name,
         "summary": summary,
         "original_text": orig_text,
         "dub_script": dub_script,

@@ -15,6 +15,7 @@ import ai_dubber
 import publisher
 import config_loader
 import db_mongo
+import affiliate_manager
 
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
@@ -112,13 +113,20 @@ def execute_pipeline_cycle():
         final_video_path = dub_result["final_video"]
         viral_caption = dub_result["caption"]
         summary = dub_result["summary"]
+        product_name = dub_result.get("product_name", summary)
+
+        # Register Amazon.in affiliate link for this product
+        aff_record = affiliate_manager.register_product_affiliate(message_id, product_name)
+        amazon_link = aff_record.get("amazon_affiliate_link", "")
 
         # Embed message ID tag into caption for persistent Instagram duplicate prevention
         if f"#tg{message_id}" not in viral_caption:
             viral_caption = f"{viral_caption}\n\n#tg{message_id}"
 
         print("\n" + "-"*60)
-        print("AI CONTENT GENERATED:")
+        print("AI CONTENT & AFFILIATE LINK GENERATED:")
+        print(f"Product: {product_name}")
+        print(f"Amazon Affiliate Link: {amazon_link}")
         print(f"Summary: {summary}")
         print(f"Caption preview:\n{viral_caption[:180]}...")
         print("-"*60 + "\n")
@@ -129,6 +137,8 @@ def execute_pipeline_cycle():
             ig_success, ig_link_or_err = publisher.upload_instagram_reel(final_video_path, viral_caption, config)
             if ig_success:
                 print(f"[+] INSTAGRAM REEL LIVE: {ig_link_or_err}")
+                # Associate published media with product in affiliate catalog
+                affiliate_manager.update_media_id_for_product(message_id, ig_link_or_err)
             else:
                 print(f"[-] Instagram upload failed: {ig_link_or_err}")
 
@@ -141,12 +151,14 @@ def execute_pipeline_cycle():
             else:
                 print(f"[-] Facebook upload failed: {fb_id_or_err}")
 
-        # 5. Mark as processed & Log (persisting to Telegram Cloud)
+        # 5. Mark as processed & Log (persisting to Telegram Cloud & MongoDB)
         telegram_extractor.mark_video_processed(message_id, config)
 
         log_entry = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "telegram_message_id": message_id,
+            "product_name": product_name,
+            "amazon_link": amazon_link,
             "summary": summary,
             "instagram": {"success": ig_success, "result": ig_link_or_err},
             "facebook": {"success": fb_success, "result": fb_id_or_err},
