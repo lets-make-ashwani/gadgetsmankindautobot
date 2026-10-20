@@ -62,28 +62,32 @@ def process_video_ai(video_path, output_dir, config):
     english_raw = translation.text
     print(f"    - English Translation: {english_raw}")
 
-    print("[*] Step 3: Polishing Dub Script & Crafting Viral Caption via Groq...")
+    print("[*] Step 3: Polishing Dub Script & Crafting Viral Captions via Groq...")
     prompt = f"""You are an elite viral social media gadget producer & affiliate copywriter for @gadgetsmankind.
 Video Duration: {duration:.1f} seconds.
 Original text ({detected_lang}): "{orig_text}"
 English translation: "{english_raw}"
 
 Please generate strict JSON:
-1. "product_name": Specific, clean commercial title of this gadget suitable for Amazon search (3-5 words, e.g. "Waterproof Leak Sealant Paste").
+1. "product_name": Specific, clean commercial title of this gadget for Amazon search (3-5 words, e.g. "Reusable Shower Drain Pipe Cover Stickers").
 2. "dub_script": A fluent, natural, enthusiastic spoken English voiceover. Keep it conversational, punchy, timed for ~{int(duration)+1} seconds.
-3. "viral_caption": A high-converting Instagram Reel caption formatted with:
-   - Curiosity hook line with emoji
-   - 2-3 bullet points of what problem it solves
-   - Clear Auto-DM Call To Action: "💬 Comment \"LINK\" or drop any emoji below and I'll send the direct Amazon purchase link straight to your DM! 📩⚡"
-   - Link in bio mention: "🔗 Direct link also available in bio @gadgetsmankind"
-   - 10-14 trending hashtags (#gadgets #amazonfinds #homefinds #gadgetsmankind #smartgadgets etc.)
-4. "summary": 1-sentence product summary.
+3. "ig_caption": Formatted specifically for Instagram Reels with CTA strictly on Line 1:
+Line 1: 💬 Comment "BUY" or "LINK" below and I'll DM you the direct Amazon link right now! 📩✨
+Line 2: 🚫 [Problem solved / curiosity hook]
+Line 3-4: [Product Name] — [Concise benefit sentence & why it saves money/effort].
+Line 5: #amazonfinds #homehacks #gadgetsmankind #lifehack #tiktokmademebuyit
+4. "fb_description": Formatted for Facebook Page post (which will have the 1-click Amazon buy link on Line 1):
+Line 1: 🚫 [Problem solved / curiosity hook]
+Line 2-4: [Product Name] — [Concise benefit sentence & why it saves money/effort].
+Line 5: #GadgetsMankind #AmazonFinds #HomeGadgets #AmazonDeals
+5. "summary": 1-sentence product summary.
 
 Respond ONLY with valid JSON:
 {{
   "product_name": "...",
   "dub_script": "...",
-  "viral_caption": "...",
+  "ig_caption": "...",
+  "fb_description": "...",
   "summary": "..."
 }}
 """
@@ -97,7 +101,8 @@ Respond ONLY with valid JSON:
     ai_data = json.loads(completion.choices[0].message.content)
     product_name = ai_data.get("product_name", "Viral Home Gadget")
     dub_script = ai_data.get("dub_script", english_raw)
-    viral_caption = ai_data.get("viral_caption", "")
+    ig_caption = ai_data.get("ig_caption", ai_data.get("viral_caption", ""))
+    fb_description = ai_data.get("fb_description", ig_caption)
     summary = ai_data.get("summary", "")
 
     print(f"    - Product Name: {product_name}")
@@ -136,7 +141,9 @@ Respond ONLY with valid JSON:
 
     return {
         "final_video": final_video,
-        "caption": viral_caption,
+        "caption": ig_caption,
+        "ig_caption": ig_caption,
+        "fb_description": fb_description,
         "product_name": product_name,
         "summary": summary,
         "original_text": orig_text,

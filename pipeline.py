@@ -111,7 +111,8 @@ def execute_pipeline_cycle():
             return False
 
         final_video_path = dub_result["final_video"]
-        viral_caption = dub_result["caption"]
+        ig_caption = dub_result.get("ig_caption", dub_result.get("caption", ""))
+        fb_desc = dub_result.get("fb_description", ig_caption)
         summary = dub_result["summary"]
         product_name = dub_result.get("product_name", summary)
 
@@ -119,22 +120,28 @@ def execute_pipeline_cycle():
         aff_record = affiliate_manager.register_product_affiliate(message_id, product_name)
         amazon_link = aff_record.get("amazon_affiliate_link", "")
 
-        # Embed message ID tag into caption for persistent Instagram duplicate prevention
-        if f"#tg{message_id}" not in viral_caption:
-            viral_caption = f"{viral_caption}\n\n#tg{message_id}"
+        # Format Instagram Reel Caption:
+        # CTA strictly on Line 1, plus #tg{message_id} at bottom for tracking
+        if f"#tg{message_id}" not in ig_caption:
+            ig_caption = f"{ig_caption}\n\n#tg{message_id}"
+
+        # Format Facebook Page Caption:
+        # Line 1 MUST be the direct 1-click Amazon Buy Link!
+        fb_caption = f"🛒 BUY LINK ➔ {amazon_link}\n\n{fb_desc}"
 
         print("\n" + "-"*60)
         print("AI CONTENT & AFFILIATE LINK GENERATED:")
         print(f"Product: {product_name}")
         print(f"Amazon Affiliate Link: {amazon_link}")
         print(f"Summary: {summary}")
-        print(f"Caption preview:\n{viral_caption[:180]}...")
+        print(f"Instagram Caption Preview (CTA on Line 1):\n{ig_caption[:180]}...")
+        print(f"Facebook Caption Preview (Buy Link on Line 1):\n{fb_caption[:180]}...")
         print("-"*60 + "\n")
 
         # 3. Publish to Instagram Reels
         ig_success, ig_link_or_err = False, None
         if config["pipeline"].get("post_to_instagram", True):
-            ig_success, ig_link_or_err = publisher.upload_instagram_reel(final_video_path, viral_caption, config)
+            ig_success, ig_link_or_err = publisher.upload_instagram_reel(final_video_path, ig_caption, config)
             if ig_success:
                 print(f"[+] INSTAGRAM REEL LIVE: {ig_link_or_err}")
                 # Associate published media with product in affiliate catalog
@@ -145,7 +152,7 @@ def execute_pipeline_cycle():
         # 4. Publish to Facebook Page
         fb_success, fb_id_or_err = False, None
         if config["pipeline"].get("post_to_facebook", True):
-            fb_success, fb_id_or_err = publisher.upload_facebook_video(final_video_path, viral_caption, config)
+            fb_success, fb_id_or_err = publisher.upload_facebook_video(final_video_path, fb_caption, config)
             if fb_success:
                 print(f"[+] FACEBOOK VIDEO LIVE: ID {fb_id_or_err}")
             else:
@@ -162,7 +169,7 @@ def execute_pipeline_cycle():
             "summary": summary,
             "instagram": {"success": ig_success, "result": ig_link_or_err},
             "facebook": {"success": fb_success, "result": fb_id_or_err},
-            "caption": viral_caption,
+            "caption": ig_caption,
             "video_file": final_video_path
         }
         log_post_result(log_entry)

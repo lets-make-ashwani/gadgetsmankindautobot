@@ -77,14 +77,12 @@ def send_private_dm_reply(comment_id, username, media_id, config):
     affiliate_link = product_info.get("amazon_affiliate_link", "https://www.amazon.in")
 
     # 2. Craft high-converting DM copy
-    greeting = f"Hey @{username}! 👋" if username and username != "friend" else "Hey there! 👋"
+    greeting = f"Hey @{username}! 🙌" if username and username != "friend" else "Hey there! 🙌"
     dm_text = (
-        f"{greeting}\n\n"
-        f"Here is the direct Amazon India link for the {product_name} you asked about:\n\n"
-        f"🔗 {affiliate_link}\n\n"
-        f"⚡ Fast shipping & best deals available on Amazon.in!\n"
-        f"Feel free to reply if you need any other gadget recommendations! ✨\n\n"
-        f"(As an Amazon Associate, I earn from qualifying purchases)"
+        f"{greeting} Thanks for commenting on our reel!\n\n"
+        f"Here is the direct Amazon link for the {product_name}:\n"
+        f"👉 {affiliate_link}\n\n"
+        f"Enjoy shopping! Let me know if you need any other cool gadget recommendations! ✨🛍️"
     )
 
     # 3. Call Meta Graph API for Private Reply to Comment
