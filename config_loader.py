@@ -57,6 +57,10 @@ def load_config():
             "auto_dub_english": os.environ.get("AUTO_DUB_ENGLISH", str(pl.get("auto_dub_english", True))).lower() in ["true", "1", "yes"],
             "post_to_instagram": os.environ.get("POST_TO_INSTAGRAM", str(pl.get("post_to_instagram", True))).lower() in ["true", "1", "yes"],
             "post_to_facebook": os.environ.get("POST_TO_FACEBOOK", str(pl.get("post_to_facebook", True))).lower() in ["true", "1", "yes"]
+        },
+        "mongodb": {
+            "uri": os.environ.get("MONGODB_URI", os.environ.get("MONGO_URI", base_cfg.get("mongodb", {}).get("uri", ""))),
+            "database": os.environ.get("MONGODB_DATABASE", base_cfg.get("mongodb", {}).get("database", "gadgets_mankind"))
         }
     }
 

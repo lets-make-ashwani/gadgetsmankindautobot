@@ -6,6 +6,7 @@ import re
 import requests
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+import db_mongo
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -14,6 +15,13 @@ if hasattr(sys.stdout, "reconfigure"):
 TRACKER_FILE = os.path.join(os.path.dirname(__file__), "tracker.json")
 
 def load_tracker():
+    # 1. Primary Source of Truth: MongoDB Atlas (if configured)
+    mongo_tracker = db_mongo.load_tracker_from_mongo()
+    if mongo_tracker:
+        save_tracker(mongo_tracker)
+        return mongo_tracker
+
+    # 2. Fallback: Local tracker file
     if not os.path.exists(TRACKER_FILE):
         return {"channel": "allterapost", "last_processed_id": 28824, "processed_ids": [28823, 28824]}
     try:
@@ -150,7 +158,7 @@ async def get_next_video(config, download_dir):
     print(f"[*] Accessing channel: {channel_name}...")
     channel = await client.get_entity(channel_name)
 
-    # 1. Sync state with Telegram Cloud ('me' Saved Messages)
+    # 1. Sync state with MongoDB Atlas and Telegram Cloud ('me' Saved Messages)
     tracker = load_tracker()
     cloud_tracker = await sync_tracker_from_cloud(client)
     if cloud_tracker:
@@ -160,6 +168,9 @@ async def get_next_video(config, download_dir):
         merged_set = set(tracker.get("processed_ids", [])) | set(cloud_tracker.get("processed_ids", []))
         tracker["processed_ids"] = sorted(list(merged_set))
         save_tracker(tracker)
+        db_mongo.save_tracker_to_mongo(tracker)
+    elif tracker:
+        db_mongo.save_tracker_to_mongo(tracker)
 
     # 2. Cross-check live Instagram posts
     ig_posted_ids = get_instagram_posted_ids(config)
@@ -217,7 +228,7 @@ async def get_next_video(config, download_dir):
     }
 
 def mark_video_processed(message_id, config=None):
-    """Marks video as processed locally and persists state to Telegram Cloud."""
+    """Marks video as processed locally, in MongoDB Atlas, and persists state to Telegram Cloud."""
     tracker = load_tracker()
     tracker["last_processed_id"] = max(tracker.get("last_processed_id", 0), message_id)
     p_set = set(tracker.get("processed_ids", []))
@@ -225,6 +236,10 @@ def mark_video_processed(message_id, config=None):
     tracker["processed_ids"] = sorted(list(p_set))
     save_tracker(tracker)
 
+    # 1. Persist to MongoDB Atlas
+    db_mongo.save_tracker_to_mongo(tracker)
+
+    # 2. Persist to Telegram Cloud ('me' Saved Messages)
     if config:
         try:
             _run_coroutine(save_tracker_to_cloud(config, tracker))

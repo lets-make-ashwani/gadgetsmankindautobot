@@ -14,6 +14,7 @@ import telegram_extractor
 import ai_dubber
 import publisher
 import config_loader
+import db_mongo
 
 BASE_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
@@ -72,6 +73,9 @@ def log_post_result(result_entry):
     history.append(result_entry)
     with open(history_file, "w", encoding="utf-8") as f:
         json.dump(history, f, indent=4, ensure_ascii=False)
+
+    # Persist log to MongoDB Atlas
+    db_mongo.log_post_to_mongo(result_entry)
 
 def execute_pipeline_cycle():
     """

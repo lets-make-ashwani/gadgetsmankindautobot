@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 import pipeline
+import db_mongo
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -38,6 +39,12 @@ automation_state = {
 }
 
 def load_recent_history():
+    # 1. Primary: MongoDB Atlas (if configured)
+    mongo_hist = db_mongo.load_recent_history_from_mongo(limit=10)
+    if mongo_hist is not None and len(mongo_hist) > 0:
+        return mongo_hist
+
+    # 2. Fallback: Local logs file
     history_file = os.path.join(os.path.dirname(__file__), "logs", "post_history.json")
     if os.path.exists(history_file):
         try:
@@ -99,6 +106,7 @@ def health():
         "last_run": automation_state["last_run"],
         "next_run": automation_state["next_run"],
         "last_message_id": tracker.get("last_processed_id", 0),
+        "mongodb_connected": db_mongo.is_connected(),
         "total_posts": len(history),
         "recent_posts": history[:5]
     }
@@ -157,6 +165,17 @@ def dashboard():
             </div>
             """
 
+    mongo_ok = db_mongo.is_connected()
+    mongo_badge = """
+    <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center gap-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> MongoDB Atlas
+    </span>
+    """ if mongo_ok else """
+    <span class="px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-900 text-zinc-400 border border-zinc-800 flex items-center gap-1">
+        <span class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span> Cloud Sync Active
+    </span>
+    """
+
     status_badge = """
     <div class="flex items-center space-x-2">
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -200,7 +219,10 @@ def dashboard():
                     </div>
                     <p class="text-xs text-zinc-500">Telegram @allterapost ➔ Groq Dubbing ➔ Instagram Reels & Facebook</p>
                 </div>
-                {status_badge}
+                <div class="flex items-center space-x-3">
+                    {mongo_badge}
+                    {status_badge}
+                </div>
             </div>
 
             <!-- Stats Grid -->
