@@ -3,9 +3,11 @@ import sys
 import json
 import time
 import asyncio
+import urllib.parse
 from datetime import datetime, timedelta
 from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -23,6 +25,11 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 app = FastAPI(title="Gadgets Mankind Automation Cloud Service")
+
+# Mount static directory for thumbnails and assets
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(os.path.join(static_dir, "thumbnails"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Allow CORS so socialpannel can query from anywhere
 app.add_middleware(
@@ -142,6 +149,129 @@ async def meta_webhook_receiver(request: Request):
         return {"status": "ok", "comments_processed": handled}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+# ==============================================================
+# SMART DEEP LINK APP OPENER (BYPASSES IN-APP BROWSER)
+# ==============================================================
+
+@app.get("/open", response_class=HTMLResponse)
+def open_in_amazon_app(q: str = "gadgets", tag: str = None):
+    amazon_tag = tag or affiliate_manager.get_amazon_tag()
+    clean_q = affiliate_manager.clean_search_term(q)
+    encoded_q = urllib.parse.quote_plus(clean_q)
+    web_fallback = f"https://www.amazon.in/s?k={encoded_q}&tag={amazon_tag}"
+    
+    # Android Intent: forces Android to bypass Instagram webview and launch native Amazon App
+    android_intent = (
+        f"intent://www.amazon.in/s?k={encoded_q}&tag={amazon_tag}"
+        f"#Intent;scheme=https;package=in.amazon.mShop.android.shopping;"
+        f"S.browser_fallback_url={urllib.parse.quote_plus(web_fallback)};end"
+    )
+    # iOS Universal / Custom Deep Link
+    ios_deeplink = f"com.amazon.mobile.shopping://www.amazon.in/s?k={encoded_q}&tag={amazon_tag}"
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Opening Amazon App • {clean_q.title()}</title>
+    <link rel="icon" href="https://www.amazon.in/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-ring {{
+            0% {{ transform: scale(0.95); opacity: 0.8; }}
+            50% {{ transform: scale(1.05); opacity: 0.3; }}
+            100% {{ transform: scale(0.95); opacity: 0.8; }}
+        }}
+        .animate-ring {{
+            animation: pulse-ring 2s infinite ease-in-out;
+        }}
+    </style>
+</head>
+<body class="bg-[#0f1115] text-zinc-100 min-h-screen flex items-center justify-center p-4 antialiased font-sans">
+    <div class="max-w-md w-full bg-zinc-900/90 border border-zinc-800 rounded-3xl p-6 shadow-2xl backdrop-blur-xl text-center flex flex-col items-center">
+        <!-- Amazon Header Badge -->
+        <div class="relative mb-5 flex items-center justify-center">
+            <div class="absolute inset-0 bg-[#FF9900]/20 rounded-full blur-xl animate-ring"></div>
+            <div class="relative w-16 h-16 bg-[#131921] border border-zinc-700/80 rounded-2xl flex items-center justify-center shadow-lg">
+                <svg class="w-10 h-10 fill-[#FF9900]" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15.5c-3.03 0-5.5-2.47-5.5-5.5S7.97 6.5 11 6.5s5.5 2.47 5.5 5.5-2.47 5.5-5.5 5.5zm6.85-2.15l-1.42 1.42c-.2.2-.51.2-.71 0l-1.06-1.06c-.2-.2-.2-.51 0-.71l1.42-1.42c.2-.2.51-.2.71 0l1.06 1.06c.2.2.2.51 0 .71z"/>
+                </svg>
+            </div>
+        </div>
+
+        <span class="text-xs uppercase font-bold tracking-widest text-[#FF9900] bg-[#FF9900]/10 px-3 py-1 rounded-full border border-[#FF9900]/20 mb-3">
+            Amazon Direct App Opener
+        </span>
+
+        <h1 class="text-xl font-bold text-white mb-2 leading-snug line-clamp-2">
+            {clean_q.title()}
+        </h1>
+
+        <p class="text-xs text-zinc-400 mb-6 flex items-center justify-center gap-2">
+            <svg class="animate-spin h-3.5 w-3.5 text-[#FF9900]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Redirecting to native Amazon app...
+        </p>
+
+        <!-- Primary Action Button: Opens Amazon App -->
+        <a id="btn-open-app" href="{android_intent}" class="w-full bg-gradient-to-r from-[#FF9900] to-[#E68A00] hover:from-[#e58a00] hover:to-[#cc7a00] text-zinc-950 font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-[#FF9900]/25 transition-all transform active:scale-95 flex items-center justify-center gap-2 mb-3 text-sm">
+            <span>🛍️</span>
+            <span>Open in Amazon App</span>
+        </a>
+
+        <!-- Fallback Web Browser Button -->
+        <a id="btn-open-web" href="{web_fallback}" class="w-full bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 font-semibold py-3 px-6 rounded-2xl border border-zinc-700/60 transition-all text-xs flex items-center justify-center gap-2">
+            <span>🌐</span>
+            <span>Continue in Web Browser</span>
+        </a>
+
+        <div class="mt-6 pt-4 border-t border-zinc-800/60 w-full flex items-center justify-between text-[11px] text-zinc-500">
+            <span>Verified Affiliate: <strong class="text-zinc-400">{amazon_tag}</strong></span>
+            <span>100% Secure Checkout</span>
+        </div>
+    </div>
+
+    <script>
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const androidIntent = "{android_intent}";
+        const iosDeeplink = "{ios_deeplink}";
+        const webFallback = "{web_fallback}";
+
+        const btnApp = document.getElementById("btn-open-app");
+        if (isIOS) {{
+            btnApp.href = iosDeeplink;
+        }} else if (isAndroid) {{
+            btnApp.href = androidIntent;
+        }} else {{
+            btnApp.href = webFallback;
+        }}
+
+        function autoLaunch() {{
+            if (isAndroid) {{
+                window.location.href = androidIntent;
+            }} else if (isIOS) {{
+                window.location.href = iosDeeplink;
+                setTimeout(function() {{
+                    window.location.href = webFallback;
+                }}, 1800);
+            }} else {{
+                window.location.replace(webFallback);
+            }}
+        }}
+
+        // Automatically fire app opener on mobile load
+        window.addEventListener("DOMContentLoaded", function() {{
+            setTimeout(autoLaunch, 150);
+        }});
+    </script>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content)
 
 # ==============================================================
 # MONITORING & API ENDPOINTS

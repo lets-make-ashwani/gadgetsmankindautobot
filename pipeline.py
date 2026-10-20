@@ -116,8 +116,30 @@ def execute_pipeline_cycle():
         summary = dub_result["summary"]
         product_name = dub_result.get("product_name", summary)
 
+        # Extract product thumbnail image for interactive DM card (Image 2 style)
+        thumbnails_dir = os.path.join(BASE_DIR, "static", "thumbnails")
+        os.makedirs(thumbnails_dir, exist_ok=True)
+        thumb_filename = f"thumb_{message_id}.jpg"
+        thumb_path = os.path.join(thumbnails_dir, thumb_filename)
+        image_url = None
+        try:
+            import subprocess
+            cmd_thumb = [
+                "ffmpeg", "-y",
+                "-ss", "00:00:02",
+                "-i", raw_video_path,
+                "-vframes", "1",
+                "-q:v", "2",
+                thumb_path
+            ]
+            subprocess.run(cmd_thumb, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(thumb_path) and os.path.getsize(thumb_path) > 0:
+                image_url = f"https://gadgetsmankindautobot.onrender.com/static/thumbnails/{thumb_filename}"
+        except Exception as e:
+            pass
+
         # Register Amazon.in affiliate link for this product
-        aff_record = affiliate_manager.register_product_affiliate(message_id, product_name)
+        aff_record = affiliate_manager.register_product_affiliate(message_id, product_name, image_url=image_url)
         amazon_link = aff_record.get("amazon_affiliate_link", "")
 
         # Format Instagram Reel Caption:

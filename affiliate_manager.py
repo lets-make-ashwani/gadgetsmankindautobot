@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import urllib.parse
 from datetime import datetime
 import db_mongo
@@ -16,19 +17,38 @@ _memory_catalog = {}
 def get_amazon_tag():
     return os.environ.get("AMAZON_AFFILIATE_TAG", DEFAULT_AMAZON_TAG).strip()
 
+def clean_search_term(text):
+    if not text:
+        return "trending gadgets"
+    # remove punctuation, emojis, extra symbols, keep alphanumeric and spaces
+    cleaned = re.sub(r'[^\w\s]', ' ', text)
+    words = [w.strip() for w in cleaned.split() if len(w.strip()) > 1][:6]
+    return " ".join(words) if words else "trending gadgets"
+
+def generate_smart_app_link(product_title_or_query):
+    """
+    Generates a smart deep link that instructs mobile browsers (Instagram in-app browser)
+    to bypass the web view and launch the native Amazon Shopping App directly.
+    """
+    tag = get_amazon_tag()
+    clean_query = clean_search_term(product_title_or_query)
+    encoded = urllib.parse.quote_plus(clean_query)
+    return f"https://gadgetsmankindautobot.onrender.com/open?q={encoded}&tag={tag}"
+
 def generate_amazon_affiliate_link(product_title_or_query):
     """
     Generates a high-converting, targeted Amazon.in search affiliate link
     for the exact product featured in the reel.
     """
     tag = get_amazon_tag()
-    # Strip non-alphanumeric noise to make high-converting search query
-    clean_query = " ".join(product_title_or_query.replace("-", " ").replace("_", " ").split()[:6])
+    clean_query = clean_search_term(product_title_or_query)
     encoded_query = urllib.parse.quote_plus(clean_query)
     affiliate_url = f"https://www.amazon.in/s?k={encoded_query}&tag={tag}"
     return affiliate_url, clean_query
 
-def register_product_affiliate(telegram_message_id, product_name, instagram_media_id=None):
+DEFAULT_PRODUCT_IMAGE = "https://images-eu.ssl-images-amazon.com/images/G/31/AmazonBusiness/AB_logo_1200x630.png"
+
+def register_product_affiliate(telegram_message_id, product_name, instagram_media_id=None, image_url=None):
     """
     Registers the affiliate link for this product in MongoDB and memory
     so Auto-DM can instantly look it up when users comment on the reel.
@@ -42,6 +62,7 @@ def register_product_affiliate(telegram_message_id, product_name, instagram_medi
         "product_name": product_name,
         "clean_search_query": clean_query,
         "amazon_affiliate_link": affiliate_link,
+        "image_url": image_url or DEFAULT_PRODUCT_IMAGE,
         "tag": tag,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -124,5 +145,6 @@ def get_product_for_media(instagram_media_id=None, telegram_message_id=None):
     return {
         "product_name": "Trending Amazon Gadget",
         "amazon_affiliate_link": f"https://www.amazon.in/s?k=trending+home+kitchen+gadgets&tag={tag}",
+        "image_url": DEFAULT_PRODUCT_IMAGE,
         "tag": tag
     }
