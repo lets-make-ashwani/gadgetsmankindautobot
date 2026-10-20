@@ -117,6 +117,14 @@ Respond ONLY with valid JSON:
     subprocess.run(cmd_merge, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print(f"[+] Dubbed Video Ready: {final_video} ({os.path.getsize(final_video)/(1024*1024):.2f} MB)")
 
+    # Zero-Footprint: Clean up intermediate audio files immediately after muxing
+    for temp_audio in [extracted_audio, dubbed_audio]:
+        if os.path.exists(temp_audio):
+            try:
+                os.remove(temp_audio)
+            except Exception as e:
+                print(f"[!] Warning removing temp audio: {e}")
+
     return {
         "final_video": final_video,
         "caption": viral_caption,
