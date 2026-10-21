@@ -180,7 +180,43 @@ def execute_pipeline_cycle():
             else:
                 print(f"[-] Facebook upload failed: {fb_id_or_err}")
 
-        # 5. Mark as processed & Log (persisting to Telegram Cloud & MongoDB)
+        # 5. Strict Publish Confirmation Check
+        req_ig = config["pipeline"].get("post_to_instagram", True)
+        req_fb = config["pipeline"].get("post_to_facebook", True)
+
+        upload_confirmed = True
+        if req_ig and not ig_success:
+            upload_confirmed = False
+        if req_fb and not fb_success:
+            upload_confirmed = False
+
+        if not upload_confirmed:
+            print("\n" + "!"*70)
+            print(f"[!] PUBLISH CONFIRMATION FAILED FOR TELEGRAM MESSAGE #{message_id}")
+            if req_ig and not ig_success:
+                print(f"    [-] Instagram upload failed: {ig_link_or_err}")
+            if req_fb and not fb_success:
+                print(f"    [-] Facebook upload failed: {fb_id_or_err}")
+            print(f"[!] PIPELINE BREAK: Message #{message_id} was NOT confirmed as published.")
+            print(f"[!] Tracker NOT advanced. Video #{message_id} will be re-processed in the next cycle!")
+            print("!"*70 + "\n")
+
+            log_entry = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "telegram_message_id": message_id,
+                "product_name": product_name,
+                "amazon_link": amazon_link,
+                "summary": summary,
+                "instagram": {"success": ig_success, "result": ig_link_or_err},
+                "facebook": {"success": fb_success, "result": fb_id_or_err},
+                "caption": ig_caption,
+                "video_file": final_video_path,
+                "status": "FAILED_CONFIRMATION_WILL_RETRY"
+            }
+            log_post_result(log_entry)
+            return False
+
+        # 6. Mark as processed & Log (ONLY when confirmed published!)
         telegram_extractor.mark_video_processed(message_id, config)
 
         log_entry = {
@@ -192,7 +228,8 @@ def execute_pipeline_cycle():
             "instagram": {"success": ig_success, "result": ig_link_or_err},
             "facebook": {"success": fb_success, "result": fb_id_or_err},
             "caption": ig_caption,
-            "video_file": final_video_path
+            "video_file": final_video_path,
+            "status": "CONFIRMED_PUBLISHED"
         }
         log_post_result(log_entry)
 

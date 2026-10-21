@@ -78,7 +78,7 @@ def run_cycle_task():
     automation_state["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         success = pipeline.execute_pipeline_cycle()
-        automation_state["last_result"] = "Success" if success else "No Video / Failed"
+        automation_state["last_result"] = "Success" if success else "Failed Verification (Will Retry)"
     except Exception as e:
         print(f"[X] Error during cycle: {e}")
         automation_state["last_result"] = f"Error: {e}"
@@ -324,6 +324,12 @@ def trigger_now(background_tasks: BackgroundTasks):
     background_tasks.add_task(run_cycle_task)
     return {"status": "success", "message": "Cycle triggered in background!"}
 
+@app.post("/reset-tracker")
+def reset_tracker_endpoint(message_id: int):
+    cfg = config_loader.load_config()
+    pipeline.telegram_extractor.reset_tracker_last_id(message_id, cfg)
+    return {"status": "success", "message": f"Tracker successfully rewound to Message #{message_id}. Previously failed videos will now re-process!"}
+
 # ==============================================================
 # INTERACTIVE MASTER DASHBOARD WITH COUNTDOWN & LIVE TERMINAL
 # ==============================================================
@@ -446,6 +452,9 @@ def dashboard():
                 </div>
                 <div class="flex items-center space-x-3">
                     {toggle_btn}
+                    <button onclick="rewindTracker()" class="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-semibold text-xs rounded-lg transition-all shadow-sm">
+                        🔄 Reprocess Failed
+                    </button>
                     <button onclick="triggerNow()" class="px-4 py-2 bg-white hover:bg-zinc-200 text-black font-semibold text-xs rounded-lg transition-all shadow-sm">
                         ⚡ Publish Next Video Now
                     </button>
@@ -566,6 +575,20 @@ def dashboard():
 
             setInterval(fetchLogs, 2500);
             fetchLogs();
+
+            function rewindTracker() {{
+                const targetId = prompt("Enter the Telegram Message ID to rewind to (default is 28830 to reprocess #28831 and #28832):", "28830");
+                if (targetId && !isNaN(targetId)) {{
+                    fetch('/reset-tracker?message_id=' + targetId, {{ method: 'POST' }})
+                        .then(r => r.json())
+                        .then(data => {{
+                            alert(data.message);
+                            fetchLogs();
+                            location.reload();
+                        }})
+                        .catch(e => alert("Error: " + e));
+                }}
+            }}
 
             function triggerNow() {{
                 if (confirm("Publish the next video from Telegram to Instagram and Facebook right now?")) {{

@@ -172,18 +172,52 @@ async def get_next_video(config, download_dir):
     elif tracker:
         db_mongo.save_tracker_to_mongo(tracker)
 
-    # 2. Cross-check live Instagram posts
+    # 2. Cross-check live Instagram posts & detect unposted/failed videos
     ig_posted_ids = get_instagram_posted_ids(config)
+
+    # Check MongoDB / local logs for messages that failed publishing and are not live on Instagram
+    failed_ids = []
+    try:
+        recent_history = db_mongo.load_recent_history_from_mongo(limit=25) or []
+        if not recent_history:
+            history_file = os.path.join(os.path.dirname(__file__), "logs", "post_history.json")
+            if os.path.exists(history_file):
+                with open(history_file, "r", encoding="utf-8") as f:
+                    recent_history = json.load(f)
+        for post in recent_history:
+            t_id = post.get("telegram_message_id")
+            if not t_id:
+                continue
+            ig_s = post.get("instagram", {}).get("success", False)
+            fb_s = post.get("facebook", {}).get("success", False)
+            if (not ig_s or not fb_s) and int(t_id) not in ig_posted_ids:
+                failed_ids.append(int(t_id))
+    except Exception as e:
+        print(f"[!] Notice checking failed posts: {e}")
 
     last_id = tracker.get("last_processed_id", 28824)
     processed_set = set(tracker.get("processed_ids", [])) | ig_posted_ids | {28823, 28824}
-    print(f"[*] Last processed message ID: {last_id}. Searching for oldest next video (Skipping {len(processed_set)} known IDs)...")
+
+    if failed_ids:
+        failed_ids = sorted(list(set(failed_ids)))
+        lowest_failed = min(failed_ids)
+        print(f"[!] ⚠️ Found {len(failed_ids)} previously failed/unposted video(s): {failed_ids}")
+        print(f"[*] Reprocessing oldest failed video (#{lowest_failed}) first...")
+        # Remove failed IDs from processed_set so iter_messages will accept them
+        for fid in failed_ids:
+            processed_set.discard(fid)
+        # Rewind search start so Telegram iter_messages picks up the failed video
+        search_min_id = lowest_failed - 1
+    else:
+        search_min_id = last_id
+
+    print(f"[*] Searching for oldest unposted video after #{search_min_id} (Skipping {len(processed_set)} known IDs)...")
 
     os.makedirs(download_dir, exist_ok=True)
     target_msg = None
 
-    # Fetch messages in reverse (oldest first, starting after last_id)
-    async for msg in client.iter_messages(channel, min_id=last_id, reverse=True, limit=100):
+    # Fetch messages in reverse (oldest first, starting after search_min_id)
+    async for msg in client.iter_messages(channel, min_id=search_min_id, reverse=True, limit=100):
         if msg.id in processed_set:
             continue
         
@@ -245,3 +279,18 @@ def mark_video_processed(message_id, config=None):
             _run_coroutine(save_tracker_to_cloud(config, tracker))
         except Exception as e:
             print(f"[!] Cloud sync notice: {e}")
+
+def reset_tracker_last_id(new_last_id, config=None):
+    """Resets tracker to an earlier message ID so skipped or failed videos can be re-run."""
+    tracker = load_tracker()
+    tracker["last_processed_id"] = new_last_id
+    tracker["processed_ids"] = [i for i in tracker.get("processed_ids", []) if i <= new_last_id]
+    save_tracker(tracker)
+    db_mongo.save_tracker_to_mongo(tracker)
+    if config:
+        try:
+            _run_coroutine(save_tracker_to_cloud(config, tracker))
+        except Exception as e:
+            pass
+    print(f"[🔄] Tracker reset to Message ID #{new_last_id}")
+    return tracker
