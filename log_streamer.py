@@ -2,6 +2,7 @@ import sys
 import threading
 from datetime import datetime
 from collections import deque
+import ist_time
 
 class LogStreamer:
     def __init__(self, max_lines=150):
@@ -15,7 +16,7 @@ class LogStreamer:
         self._stdout.write(message)
         if message and message.strip():
             with self.lock:
-                timestamp = datetime.now().strftime("%H:%M:%S")
+                timestamp = ist_time.now_ist_str("%H:%M:%S")
                 for line in message.strip().split("\n"):
                     clean = line.strip()
                     if clean:

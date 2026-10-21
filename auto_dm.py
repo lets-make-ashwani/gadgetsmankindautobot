@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 import db_mongo
 import affiliate_manager
+import ist_time
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -71,7 +72,7 @@ def mark_comment_replied(comment_id, username, media_id, product_name, affiliate
                     "media_id": str(media_id) if media_id else None,
                     "product_name": product_name,
                     "affiliate_link": affiliate_link,
-                    "replied_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    "replied_at": ist_time.now_ist_str()
                 }},
                 upsert=True
             )

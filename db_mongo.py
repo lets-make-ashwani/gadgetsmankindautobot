@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+import ist_time
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -76,7 +77,7 @@ def save_tracker_to_mongo(tracker_data):
             "channel": tracker_data.get("channel", "allterapost"),
             "last_processed_id": tracker_data.get("last_processed_id", 28824),
             "processed_ids": tracker_data.get("processed_ids", [28823, 28824]),
-            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "updated_at": ist_time.now_ist_str()
         }
         db["automation_state"].update_one(
             {"_id": "global_tracker"},

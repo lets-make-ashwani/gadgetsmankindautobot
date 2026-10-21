@@ -1,8 +1,13 @@
 FROM python:3.11-slim
 
-# Install system dependencies including FFmpeg
+# Set timezone to Asia/Kolkata (Indian Standard Time)
+ENV TZ="Asia/Kolkata"
+
+# Install system dependencies including FFmpeg and tzdata
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg tzdata && \
+    ln -fs /usr/share/zoneinfo/Asia/Kolkata /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

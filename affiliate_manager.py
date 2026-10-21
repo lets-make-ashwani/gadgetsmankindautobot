@@ -4,6 +4,7 @@ import re
 import urllib.parse
 from datetime import datetime
 import db_mongo
+import ist_time
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -64,7 +65,7 @@ def register_product_affiliate(telegram_message_id, product_name, instagram_medi
         "amazon_affiliate_link": affiliate_link,
         "image_url": image_url or DEFAULT_PRODUCT_IMAGE,
         "tag": tag,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp": ist_time.now_ist_str()
     }
 
     # Store in memory

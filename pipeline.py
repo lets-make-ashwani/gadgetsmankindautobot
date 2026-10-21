@@ -5,6 +5,7 @@ import time
 import argparse
 import asyncio
 from datetime import datetime
+import ist_time
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -89,7 +90,7 @@ def execute_pipeline_cycle():
     """
     config = load_config()
     print("\n" + "="*70)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] STARTING GADGETS MANKIND AUTOMATION CYCLE")
+    print(f"[{ist_time.now_ist_str()}] STARTING GADGETS MANKIND AUTOMATION CYCLE")
     print("="*70)
 
     # 1. Fetch next video from Telegram
@@ -202,7 +203,7 @@ def execute_pipeline_cycle():
             print("!"*70 + "\n")
 
             log_entry = {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "timestamp": ist_time.now_ist_str(),
                 "telegram_message_id": message_id,
                 "product_name": product_name,
                 "amazon_link": amazon_link,
@@ -220,7 +221,7 @@ def execute_pipeline_cycle():
         telegram_extractor.mark_video_processed(message_id, config)
 
         log_entry = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": ist_time.now_ist_str(),
             "telegram_message_id": message_id,
             "product_name": product_name,
             "amazon_link": amazon_link,

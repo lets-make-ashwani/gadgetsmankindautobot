@@ -19,6 +19,7 @@ import db_mongo
 import auto_dm
 import affiliate_manager
 import config_loader
+import ist_time
 
 # UTF-8 encoding
 if hasattr(sys.stdout, "reconfigure"):
@@ -46,8 +47,8 @@ automation_state = {
     "is_paused": False,
     "interval_hours": 3,
     "last_run": None,
-    "next_run": (datetime.now() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S"),
-    "next_run_iso": (datetime.now() + timedelta(hours=3)).isoformat(),
+    "next_run": (ist_time.now_ist() + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S IST"),
+    "next_run_iso": (ist_time.now_ist() + timedelta(hours=3)).isoformat(),
     "is_processing": False,
     "last_result": None
 }
@@ -75,7 +76,7 @@ def run_cycle_task():
         print("[!] Cycle already in progress. Skipping.")
         return
     automation_state["is_processing"] = True
-    automation_state["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    automation_state["last_run"] = ist_time.now_ist_str()
     try:
         success = pipeline.execute_pipeline_cycle()
         automation_state["last_result"] = "Success" if success else "Failed Verification (Will Retry)"
@@ -84,8 +85,8 @@ def run_cycle_task():
         automation_state["last_result"] = f"Error: {e}"
     finally:
         automation_state["is_processing"] = False
-        next_dt = datetime.now() + timedelta(hours=automation_state["interval_hours"])
-        automation_state["next_run"] = next_dt.strftime("%Y-%m-%d %H:%M:%S")
+        next_dt = ist_time.now_ist() + timedelta(hours=automation_state["interval_hours"])
+        automation_state["next_run"] = next_dt.strftime("%Y-%m-%d %H:%M:%S IST")
         automation_state["next_run_iso"] = next_dt.isoformat()
 
 async def background_scheduler():
@@ -94,9 +95,9 @@ async def background_scheduler():
     await asyncio.sleep(30)
     while True:
         if automation_state["is_paused"]:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Bot is PAUSED. Skipping scheduled 3-hour cycle.")
+            print(f"[{ist_time.now_ist_str()}] Bot is PAUSED. Skipping scheduled 3-hour cycle.")
         else:
-            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Triggering scheduled 3-hour cycle...")
+            print(f"[{ist_time.now_ist_str()}] Triggering scheduled 3-hour cycle...")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, run_cycle_task)
             
@@ -349,7 +350,7 @@ def dashboard():
         history_html = "<div class='text-zinc-500 text-sm py-4'>No posts logged yet. First cycle running shortly.</div>"
     else:
         for item in history:
-            ts = item.get("timestamp", "")
+            ts = ist_time.format_ts_to_ist(item.get("timestamp", ""))
             mid = item.get("telegram_message_id", "")
             summary = item.get("product_name") or item.get("summary", "Product clip")
             ig_link = item.get("instagram", {}).get("result", "")
@@ -520,7 +521,7 @@ def dashboard():
 
         <script>
             // Live Countdown Calculation
-            const nextRunTarget = new Date("{automation_state['next_run']}").getTime();
+            const nextRunTarget = new Date("{automation_state['next_run_iso']}").getTime();
             const isPaused = {'true' if is_paused else 'false'};
 
             function updateCountdown() {{
